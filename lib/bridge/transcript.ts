@@ -1,0 +1,154 @@
+import { createReadStream, existsSync, readFileSync } from 'fs'
+import { createInterface } from 'readline'
+import { resolveTranscriptPath, resolveTranscriptLockPath } from './state-resolver'
+import type { RawTranscriptLine, RawTranscriptSession } from './raw-types'
+
+/**
+ * Direct .jsonl transcript reader for on-demand conversation detail.
+ *
+ * Reads transcript files line-by-line with optional pagination (offset/limit)
+ * to avoid loading entire transcripts into memory for long sessions.
+ *
+ * Lock-file existence check tells the caller whether the session is still active.
+ */
+
+export interface TranscriptReadOptions {
+  /** Skip this many lines from the start */
+  offset?: number
+  /** Max lines to return (0 = unlimited) */
+  limit?: number
+  /** Only return lines of these types */
+  typeFilter?: RawTranscriptLine['type'][]
+}
+
+export interface TranscriptResult {
+  lines: RawTranscriptLine[]
+  totalLinesRead: number
+  /** Whether a .jsonl.lock file exists (session is active) */
+  isLocked: boolean
+  /** Whether there are more lines beyond offset+limit */
+  hasMore: boolean
+}
+
+/**
+ * Read transcript lines from a session's .jsonl file.
+ *
+ * Returns null if the file does not exist.
+ */
+export async function readTranscript(
+  stateDir: string,
+  agentId: string,
+  sessionId: string,
+  options?: TranscriptReadOptions
+): Promise<TranscriptResult | null> {
+  const filePath = resolveTranscriptPath(stateDir, agentId, sessionId)
+  if (!existsSync(filePath)) return null
+
+  const lockPath = resolveTranscriptLockPath(stateDir, agentId, sessionId)
+  const isLocked = existsSync(lockPath)
+
+  const offset = options?.offset ?? 0
+  const limit = options?.limit ?? 0
+  const typeFilter = options?.typeFilter
+    ? new Set(options.typeFilter)
+    : null
+
+  const lines: RawTranscriptLine[] = []
+  let lineIndex = 0
+  let matchIndex = 0
+  let hasMore = false
+
+  const rl = createInterface({
+    input: createReadStream(filePath, { encoding: 'utf-8' }),
+    crlfDelay: Infinity,
+  })
+
+  for await (const rawLine of rl) {
+    lineIndex++
+
+    const trimmed = rawLine.trim()
+    if (!trimmed) continue
+
+    let parsed: RawTranscriptLine
+    try {
+      parsed = JSON.parse(trimmed)
+    } catch {
+      // Skip malformed lines silently
+      continue
+    }
+
+    // Type filter
+    if (typeFilter && !typeFilter.has(parsed.type)) continue
+
+    // Pagination: skip until offset
+    if (matchIndex < offset) {
+      matchIndex++
+      continue
+    }
+
+    // Pagination: check limit
+    if (limit > 0 && lines.length >= limit) {
+      hasMore = true
+      break
+    }
+
+    lines.push(parsed)
+    matchIndex++
+  }
+
+  return {
+    lines,
+    totalLinesRead: lineIndex,
+    isLocked,
+    hasMore,
+  }
+}
+
+/**
+ * Check if a session is currently active (has a .jsonl.lock file).
+ */
+export function isSessionActive(stateDir: string, agentId: string, sessionId: string): boolean {
+  return existsSync(resolveTranscriptLockPath(stateDir, agentId, sessionId))
+}
+
+/**
+ * Check if a transcript file exists for a session.
+ */
+export function hasTranscript(stateDir: string, agentId: string, sessionId: string): boolean {
+  return existsSync(resolveTranscriptPath(stateDir, agentId, sessionId))
+}
+
+/**
+ * Fast extraction of cwd from a transcript's first session line.
+ * Reads only the first few lines of the file (synchronously) to avoid
+ * full transcript parsing during sync. Returns null if no transcript
+ * exists or no session line is found in the first 5 lines.
+ */
+export function getSessionCwd(stateDir: string, agentId: string, sessionId: string): string | null {
+  const filePath = resolveTranscriptPath(stateDir, agentId, sessionId)
+  if (!existsSync(filePath)) return null
+
+  try {
+    // Read just the first 4KB — the session line is always first and small
+    const fd = readFileSync(filePath, { encoding: 'utf-8', flag: 'r' })
+    const firstChunk = fd.slice(0, 4096)
+    const lines = firstChunk.split('\n')
+
+    for (const line of lines.slice(0, 5)) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (parsed.type === 'session' && parsed.cwd) {
+          return (parsed as RawTranscriptSession).cwd
+        }
+      } catch {
+        continue
+      }
+    }
+  } catch {
+    // File read error — skip silently
+  }
+
+  return null
+}

@@ -1,0 +1,339 @@
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useProjects, useProjectContext } from '@/lib/hooks'
+import { createProject, deleteProject } from '@/lib/api'
+import { timeAgo } from '@/lib/utils'
+import {
+  FolderKanban,
+  Activity,
+  MessageSquare,
+  CheckCircle2,
+  AlertTriangle,
+  Plus,
+  X,
+  Trash2,
+} from 'lucide-react'
+
+const PROJECT_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899']
+
+function ProjectCard({ projectId, delay, onDelete }: { projectId: string; delay: number; onDelete: (id: string) => void }) {
+  const { data: context } = useProjectContext(projectId)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  if (!context) return null
+
+  const { project, taskCount, activeRunCount, recentConversationCount, blockedCount, queuedCount, completedCount, lastActivityAt } = context
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay }}
+      className="relative"
+    >
+      <Link
+        href={`/projects/${project.id}`}
+        className="block bg-card border border-border rounded-xl p-5 card-glow hover:card-hover transition-all group"
+      >
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm"
+              style={{ backgroundColor: project.color + '20', color: project.color }}
+            >
+              {project.name[0]}
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground group-hover:text-accent transition-colors">
+                {project.name}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                {project.description || 'No description'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Status breakdown bar */}
+        {taskCount > 0 && (
+          <div className="flex items-center gap-1 mb-3">
+            {activeRunCount > 0 && (
+              <div
+                className="h-1.5 rounded-full bg-status-running"
+                style={{ flex: activeRunCount }}
+                title={`${activeRunCount} active`}
+              />
+            )}
+            {blockedCount > 0 && (
+              <div
+                className="h-1.5 rounded-full bg-status-approval"
+                style={{ flex: blockedCount }}
+                title={`${blockedCount} blocked`}
+              />
+            )}
+            {queuedCount > 0 && (
+              <div
+                className="h-1.5 rounded-full bg-muted-foreground/30"
+                style={{ flex: queuedCount }}
+                title={`${queuedCount} queued`}
+              />
+            )}
+            {completedCount > 0 && (
+              <div
+                className="h-1.5 rounded-full bg-status-success"
+                style={{ flex: completedCount }}
+                title={`${completedCount} completed`}
+              />
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" /> {taskCount} tasks
+          </span>
+          <span className="flex items-center gap-1">
+            <Activity className="w-3 h-3" /> {activeRunCount} active
+          </span>
+          {blockedCount > 0 && (
+            <span className="flex items-center gap-1 text-status-approval">
+              <AlertTriangle className="w-3 h-3" /> {blockedCount} blocked
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <MessageSquare className="w-3 h-3" /> {recentConversationCount} chats
+          </span>
+        </div>
+        {lastActivityAt && (
+          <div className="mt-2 text-[10px] text-muted-foreground/50">
+            Last activity {timeAgo(lastActivityAt)}
+          </div>
+        )}
+      </Link>
+
+      {/* Delete button */}
+      <button
+        onClick={(e) => { e.preventDefault(); setConfirmDelete(true) }}
+        className="absolute top-3 right-3 p-1.5 rounded-md text-muted-foreground/30 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+        title="Delete project"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="absolute inset-0 z-10 bg-card/95 border border-red-500/20 rounded-xl flex flex-col items-center justify-center gap-3 backdrop-blur-sm">
+          <p className="text-sm text-foreground font-medium">Delete &ldquo;{project.name}&rdquo;?</p>
+          <p className="text-xs text-muted-foreground">This removes the project and its role assignments.</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onDelete(project.id)}
+              className="px-3 py-1.5 text-xs bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+export default function ProjectsPage() {
+  const { data: projects, loading } = useProjects()
+  const [showCreate, setShowCreate] = useState(false)
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [color, setColor] = useState(PROJECT_COLORS[0])
+  const [repoUrl, setRepoUrl] = useState('')
+  const [repoBranch, setRepoBranch] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteProject(id)
+      window.location.reload()
+    } catch (err) {
+      console.error('Failed to delete project:', err)
+    }
+  }
+
+  const handleCreate = async () => {
+    if (!name.trim()) return
+    setCreating(true)
+    try {
+      await createProject({
+        name: name.trim(),
+        description: description.trim(),
+        color,
+        repo_url: repoUrl.trim() || undefined,
+        repo_branch: repoBranch.trim() || undefined,
+      })
+      setName('')
+      setDescription('')
+      setColor(PROJECT_COLORS[0])
+      setRepoUrl('')
+      setRepoBranch('')
+      setShowCreate(false)
+      // Reload page to pick up new project
+      window.location.reload()
+    } catch (err) {
+      console.error('Failed to create project:', err)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="flex-1 h-screen overflow-y-auto bg-background">
+      <div className="max-w-5xl mx-auto px-8 py-8 space-y-8">
+        <header className="flex items-center justify-between section-header-fade pb-2">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground tracking-tight flex items-center gap-2">
+              <FolderKanban className="w-6 h-6 text-accent" />
+              Projects
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Each project has its own agent roles, tasks, and conversations.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 bg-accent hover:bg-accent/90 text-white px-4 py-2 rounded-lg font-medium text-sm transition-all duration-150 shadow-[0_0_15px_rgba(59,130,246,0.3)]"
+          >
+            <Plus className="w-4 h-4" />
+            New Project
+          </button>
+        </header>
+
+        {projects.length === 0 && !loading ? (
+          <div className="text-center py-16">
+            <FolderKanban className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+            <p className="text-sm text-muted-foreground">
+              No projects yet — create one to organize your agent work.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {projects.map((project, i) => (
+              <ProjectCard key={project.id} projectId={project.id} delay={0.1 + i * 0.05} onDelete={handleDelete} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Create Project Modal */}
+      <AnimatePresence>
+        {showCreate && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowCreate(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-5 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-foreground">New Project</h2>
+                <button onClick={() => setShowCreate(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">Name</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. BiteClimb, ScoutAI"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">Description</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="What is this project about?"
+                    rows={2}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent resize-none"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">Color</label>
+                  <div className="flex items-center gap-2">
+                    {PROJECT_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => setColor(c)}
+                        className={`w-7 h-7 rounded-full transition-all ${color === c ? 'ring-2 ring-accent ring-offset-2 ring-offset-card' : 'hover:scale-110'}`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">Repo URL <span className="text-muted-foreground/50">(optional)</span></label>
+                  <input
+                    type="text"
+                    value={repoUrl}
+                    onChange={(e) => setRepoUrl(e.target.value)}
+                    placeholder="e.g. https://github.com/org/repo"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">Branch <span className="text-muted-foreground/50">(optional)</span></label>
+                  <input
+                    type="text"
+                    value={repoBranch}
+                    onChange={(e) => setRepoBranch(e.target.value)}
+                    placeholder="e.g. main"
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowCreate(false)}
+                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreate}
+                  disabled={!name.trim() || creating}
+                  className="px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {creating ? 'Creating...' : 'Create Project'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
