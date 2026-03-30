@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useUsage, useAgents, useRuns } from '@/lib/hooks'
 import { MetricCard } from '@/components/ui/metric-card'
@@ -11,6 +12,8 @@ import {
   Cpu,
   BarChart3,
 } from 'lucide-react'
+
+type TimeRange = '7d' | '30d' | 'all'
 import {
   AreaChart,
   Area,
@@ -25,10 +28,20 @@ import {
 } from 'recharts'
 
 export default function UsagePage() {
+  const [timeRange, setTimeRange] = useState<TimeRange>('7d')
   const { data: usage } = useUsage()
   const { data: agents } = useAgents()
   const { data: runs } = useRuns()
-  const { daily: dailyUsage, models: modelUsage } = usage
+  const { daily: rawDailyUsage, models: modelUsage } = usage
+
+  const dailyUsage = useMemo(() => {
+    if (timeRange === 'all') return rawDailyUsage
+    const now = new Date()
+    const days = timeRange === '7d' ? 7 : 30
+    const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
+    return rawDailyUsage.filter(d => new Date(d.date) >= cutoff)
+  }, [rawDailyUsage, timeRange])
+
   const totalCost = dailyUsage.reduce(
     (sum, d) => sum + d.estimated_cost,
     0
@@ -66,9 +79,9 @@ export default function UsagePage() {
     cost: m.estimated_cost,
     tier: m.tier,
     color:
-      m.tier === 'cheap'
+      m.tier === 'economy'
         ? '#10b981'
-        : m.tier === 'mid'
+        : m.tier === 'standard'
           ? '#3b82f6'
           : '#f59e0b',
   }))
@@ -90,26 +103,39 @@ export default function UsagePage() {
               Usage & Cost
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Monitor API spend and performance metrics. All costs are <span className="text-amber-400/70 font-medium">estimated</span> from token counts.
+              Estimated costs based on Claude Agent SDK usage. All costs are <span className="text-amber-400/70 font-medium">estimated</span> from token counts.
             </p>
           </div>
           <div className="flex items-center gap-2 bg-card border border-border rounded-lg p-1">
-            <button className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent/10 text-accent">
-              7 Days
-            </button>
-            <button className="px-3 py-1.5 text-sm font-medium rounded-md text-muted-foreground hover:text-foreground">
-              30 Days
-            </button>
-            <button className="px-3 py-1.5 text-sm font-medium rounded-md text-muted-foreground hover:text-foreground">
-              All Time
-            </button>
+            {([['7d', '7 Days'], ['30d', '30 Days'], ['all', 'All Time']] as const).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setTimeRange(value)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  timeRange === value
+                    ? 'bg-accent/10 text-accent'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </header>
 
+        {dailyUsage.length === 0 && modelUsage.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <BarChart3 className="w-12 h-12 text-muted-foreground/30 mb-4" />
+            <p className="text-sm text-muted-foreground">
+              Usage data appears as agents run conversations and tasks.
+            </p>
+          </div>
+        ) : (
+        <>
         {/* Metric Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
-            title="Est. Spend (7d)"
+            title={`Est. Spend (${timeRange === 'all' ? 'all' : timeRange})`}
             value={formatCost(totalCost)}
             icon={<DollarSign className="w-5 h-5" />}
             accentColor="#a855f7"
@@ -151,7 +177,7 @@ export default function UsagePage() {
             className="lg:col-span-2 bg-card border border-border rounded-xl p-5 card-glow"
           >
             <h3 className="text-sm font-medium text-foreground mb-6">
-              Spend over time
+              Est. Spend over time
             </h3>
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -207,7 +233,7 @@ export default function UsagePage() {
                     }}
                     formatter={(value) => [
                       `$${Number(value).toFixed(2)}`,
-                      'Cost',
+                      'Est. Cost',
                     ]}
                   />
                   <Area
@@ -230,7 +256,7 @@ export default function UsagePage() {
             className="bg-card border border-border rounded-xl p-5 card-glow flex flex-col"
           >
             <h3 className="text-sm font-medium text-foreground mb-6">
-              Spend by Model
+              Est. Spend by Model
             </h3>
             <div className="w-full h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -271,7 +297,7 @@ export default function UsagePage() {
                     }}
                     formatter={(value) => [
                       `$${Number(value).toFixed(2)}`,
-                      'Cost',
+                      'Est. Cost',
                     ]}
                   />
                   <Bar dataKey="cost" radius={[0, 4, 4, 0]} barSize={20}>
@@ -295,7 +321,7 @@ export default function UsagePage() {
             className="bg-card border border-border rounded-xl p-5 card-glow"
           >
             <h3 className="text-sm font-medium text-foreground mb-4">
-              Spend by Agent
+              Est. Spend by Agent
             </h3>
             <div className="space-y-4">
               {agentCosts.map((agent) => (
@@ -349,15 +375,15 @@ export default function UsagePage() {
                 <tbody className="divide-y divide-border/50">
                   {modelUsage.map((m) => {
                     const tierColor =
-                      m.tier === 'cheap'
+                      m.tier === 'economy'
                         ? 'bg-status-success'
-                        : m.tier === 'mid'
+                        : m.tier === 'standard'
                           ? 'bg-status-running'
                           : 'bg-status-approval'
                     const textColor =
-                      m.tier === 'cheap'
+                      m.tier === 'economy'
                         ? 'text-status-success'
-                        : m.tier === 'mid'
+                        : m.tier === 'standard'
                           ? 'text-status-running'
                           : 'text-status-approval'
                     return (
@@ -390,6 +416,8 @@ export default function UsagePage() {
             </div>
           </motion.div>
         </div>
+        </>
+        )}
       </div>
     </div>
   )

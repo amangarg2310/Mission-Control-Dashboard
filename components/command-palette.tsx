@@ -19,7 +19,6 @@ import {
   LayoutGrid,
   Plus,
   ArrowRight,
-  Command,
 } from 'lucide-react'
 
 interface SearchResult {
@@ -35,9 +34,8 @@ interface SearchResult {
 const pages: SearchResult[] = [
   { id: 'p-dashboard', type: 'page', title: 'Mission Control', subtitle: 'Dashboard overview', href: '/', icon: LayoutDashboard },
   { id: 'p-runs', type: 'page', title: 'Run Inspector', subtitle: 'Monitor agent runs', href: '/runs', icon: Activity },
-  { id: 'p-chats', type: 'page', title: 'Chat Workspace', subtitle: 'Conversations with agents', href: '/chats', icon: MessageSquare },
+  { id: 'p-projects', type: 'page', title: 'Projects', subtitle: 'Open a project workspace (Chat, Boards, Activity)', href: '/projects', icon: MessageSquare },
   { id: 'p-agents', type: 'page', title: 'Agent Registry', subtitle: 'Manage agents', href: '/agents', icon: Bot },
-  { id: 'p-boards', type: 'page', title: 'Boards', subtitle: 'Kanban task management', href: '/boards', icon: LayoutGrid },
   { id: 'p-approvals', type: 'page', title: 'Approvals', subtitle: 'Review pending decisions', href: '/approvals', icon: ShieldCheck },
   { id: 'p-activity', type: 'page', title: 'Activity Log', subtitle: 'Full audit trail', href: '/activity', icon: Activity },
   { id: 'p-usage', type: 'page', title: 'Usage & Cost', subtitle: 'Spending analytics', href: '/usage', icon: BarChart3 },
@@ -92,7 +90,7 @@ function getSearchResults(query: string, agents: Agent[], tasks: Task[], runs: R
         type: 'task',
         title: task.title,
         subtitle: `${task.status} · ${task.priority} priority`,
-        href: '/boards',
+        href: '/projects',
       })
     }
   }
@@ -155,9 +153,7 @@ export function CommandPalette() {
     }
   }, [open])
 
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [query])
+  // Selection index is reset in the onChange handler above
 
   const handleSelect = (result: SearchResult) => {
     setOpen(false)
@@ -211,7 +207,7 @@ export function CommandPalette() {
               <input
                 ref={inputRef}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0) }}
                 onKeyDown={handleInputKeyDown}
                 placeholder="Search pages, agents, tasks, runs..."
                 className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"

@@ -2,10 +2,14 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useProjects, useProjectContext } from '@/lib/hooks'
+import { useProjects, useProjectContext, useAgents } from '@/lib/hooks'
 import { createProject, deleteProject } from '@/lib/api'
 import { timeAgo } from '@/lib/utils'
+import { AgentAvatar } from '@/components/ui/agent-avatar'
+import { useToast } from '@/components/ui/toast'
+import type { Agent } from '@/lib/types'
 import {
   FolderKanban,
   Activity,
@@ -13,18 +17,31 @@ import {
   CheckCircle2,
   AlertTriangle,
   Plus,
-  X,
   Trash2,
+  Bot,
 } from 'lucide-react'
 
-const PROJECT_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899']
+function getHealthStatus(context: { blockedCount: number; activeRunCount: number; taskCount: number }): { color: string; label: string; dot: string } {
+  if (context.blockedCount > 0) {
+    return { color: 'text-red-400', label: 'Blocked', dot: 'bg-red-400' }
+  }
+  if (context.activeRunCount > 0) {
+    return { color: 'text-emerald-400', label: 'All good', dot: 'bg-emerald-400' }
+  }
+  if (context.taskCount > 0) {
+    return { color: 'text-amber-400', label: 'Needs attention', dot: 'bg-amber-400' }
+  }
+  return { color: 'text-emerald-400', label: 'All good', dot: 'bg-emerald-400' }
+}
 
-function ProjectCard({ projectId, delay, onDelete }: { projectId: string; delay: number; onDelete: (id: string) => void }) {
+function ProjectCard({ projectId, delay, onDelete, agents }: { projectId: string; delay: number; onDelete: (id: string) => void; agents: Agent[] }) {
   const { data: context } = useProjectContext(projectId)
   const [confirmDelete, setConfirmDelete] = useState(false)
   if (!context) return null
 
   const { project, taskCount, activeRunCount, recentConversationCount, blockedCount, queuedCount, completedCount, lastActivityAt } = context
+  const health = getHealthStatus({ blockedCount, activeRunCount, taskCount })
+  const primaryAgent = project.primary_agent_id ? agents.find((a) => a.id === project.primary_agent_id) : null
 
   return (
     <motion.div
@@ -39,11 +56,15 @@ function ProjectCard({ projectId, delay, onDelete }: { projectId: string; delay:
       >
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm"
-              style={{ backgroundColor: project.color + '20', color: project.color }}
-            >
-              {project.name[0]}
+            <div className="relative">
+              <div
+                className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm"
+                style={{ backgroundColor: project.color + '20', color: project.color }}
+              >
+                {project.name[0]}
+              </div>
+              {/* Health indicator dot */}
+              <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-card ${health.dot}`} title={health.label} />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-foreground group-hover:text-accent transition-colors">
@@ -54,6 +75,24 @@ function ProjectCard({ projectId, delay, onDelete }: { projectId: string; delay:
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Primary agent */}
+        <div className="flex items-center gap-2 mb-3 px-2 py-1.5 bg-background/50 border border-border/30 rounded-lg">
+          {primaryAgent ? (
+            <>
+              <AgentAvatar name={primaryAgent.name} color={primaryAgent.avatar_color} size="sm" />
+              <span className="text-[10px] text-foreground/70 truncate">
+                <span className="text-muted-foreground">Primary:</span> {primaryAgent.name}
+              </span>
+              <span className={`ml-auto w-1.5 h-1.5 rounded-full shrink-0 ${primaryAgent.is_active ? 'bg-status-running led-pulse' : 'bg-muted-foreground/30'}`} />
+            </>
+          ) : (
+            <>
+              <Bot className="w-3.5 h-3.5 text-muted-foreground/30" />
+              <span className="text-[10px] text-muted-foreground/40 italic">No primary agent</span>
+            </>
+          )}
         </div>
 
         {/* Status breakdown bar */}
@@ -103,7 +142,7 @@ function ProjectCard({ projectId, delay, onDelete }: { projectId: string; delay:
             </span>
           )}
           <span className="flex items-center gap-1">
-            <MessageSquare className="w-3 h-3" /> {recentConversationCount} chats
+            <MessageSquare className="w-3 h-3" /> {recentConversationCount} conversations
           </span>
         </div>
         {lastActivityAt && (
@@ -148,22 +187,22 @@ function ProjectCard({ projectId, delay, onDelete }: { projectId: string; delay:
 }
 
 export default function ProjectsPage() {
+  const router = useRouter()
   const [refreshKey, setRefreshKey] = useState(0)
   const { data: projects, loading } = useProjects(refreshKey)
+  const { data: agents } = useAgents()
+  const { showToast } = useToast()
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [color, setColor] = useState(PROJECT_COLORS[0])
-  const [repoUrl, setRepoUrl] = useState('')
-  const [repoBranch, setRepoBranch] = useState('')
   const [creating, setCreating] = useState(false)
 
   const handleDelete = async (id: string) => {
     try {
       await deleteProject(id)
       setRefreshKey((k) => k + 1)
-    } catch (err) {
-      console.error('Failed to delete project:', err)
+      showToast('Project deleted', 'success')
+    } catch {
+      showToast('Failed to delete project', 'error')
     }
   }
 
@@ -171,22 +210,12 @@ export default function ProjectsPage() {
     if (!name.trim()) return
     setCreating(true)
     try {
-      await createProject({
-        name: name.trim(),
-        description: description.trim(),
-        color,
-        repo_url: repoUrl.trim() || undefined,
-        repo_branch: repoBranch.trim() || undefined,
-      })
+      const newProject = await createProject({ name: name.trim() })
       setName('')
-      setDescription('')
-      setColor(PROJECT_COLORS[0])
-      setRepoUrl('')
-      setRepoBranch('')
       setShowCreate(false)
-      setRefreshKey((k) => k + 1)
-    } catch (err) {
-      console.error('Failed to create project:', err)
+      router.push(`/projects/${newProject.id}`)
+    } catch {
+      showToast('Failed to create project', 'error')
     } finally {
       setCreating(false)
     }
@@ -202,7 +231,7 @@ export default function ProjectsPage() {
               Projects
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Each project has its own agent roles, tasks, and conversations.
+              Each project has a primary agent that orchestrates work across 7 role lanes.
             </p>
           </div>
           <button
@@ -224,13 +253,13 @@ export default function ProjectsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {projects.map((project, i) => (
-              <ProjectCard key={project.id} projectId={project.id} delay={0.1 + i * 0.05} onDelete={handleDelete} />
+              <ProjectCard key={project.id} projectId={project.id} delay={0.1 + i * 0.05} onDelete={handleDelete} agents={agents} />
             ))}
           </div>
         )}
       </div>
 
-      {/* Create Project Modal */}
+      {/* Create Project — minimal modal */}
       <AnimatePresence>
         {showCreate && (
           <motion.div
@@ -238,98 +267,40 @@ export default function ProjectsPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-            onClick={() => setShowCreate(false)}
+            onClick={() => { setShowCreate(false); setName('') }}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-card border border-border rounded-xl p-6 w-full max-w-md space-y-5 shadow-xl"
+              className="bg-card border border-border rounded-xl p-5 w-full max-w-sm shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-foreground">New Project</h2>
-                <button onClick={() => setShowCreate(false)} className="text-muted-foreground hover:text-foreground">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Name</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. BiteClimb, ScoutAI"
-                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Description</label>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="What is this project about?"
-                    rows={2}
-                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent resize-none"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Color</label>
-                  <div className="flex items-center gap-2">
-                    {PROJECT_COLORS.map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => setColor(c)}
-                        className={`w-7 h-7 rounded-full transition-all ${color === c ? 'ring-2 ring-accent ring-offset-2 ring-offset-card' : 'hover:scale-110'}`}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Repo URL <span className="text-muted-foreground/50">(optional)</span></label>
-                  <input
-                    type="text"
-                    value={repoUrl}
-                    onChange={(e) => setRepoUrl(e.target.value)}
-                    placeholder="e.g. https://github.com/org/repo"
-                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Branch <span className="text-muted-foreground/50">(optional)</span></label>
-                  <input
-                    type="text"
-                    value={repoBranch}
-                    onChange={(e) => setRepoBranch(e.target.value)}
-                    placeholder="e.g. main"
-                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <h2 className="text-sm font-semibold text-foreground mb-3">New Project</h2>
+              <form
+                onSubmit={(e) => { e.preventDefault(); handleCreate() }}
+                className="flex items-center gap-2"
+              >
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Project name, e.g. ScoutAI"
+                  className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                  autoFocus
+                  disabled={creating}
+                />
                 <button
-                  onClick={() => setShowCreate(false)}
-                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreate}
+                  type="submit"
                   disabled={!name.trim() || creating}
-                  className="px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
-                  {creating ? 'Creating...' : 'Create Project'}
+                  {creating ? 'Creating...' : 'Create'}
                 </button>
-              </div>
+              </form>
+              <p className="text-[10px] text-muted-foreground/50 mt-2">
+                A primary agent and advisor role will be set up automatically.
+              </p>
             </motion.div>
           </motion.div>
         )}

@@ -29,7 +29,7 @@ export type EventType =
   | 'paused'
   | 'resumed';
 
-export type ModelTier = 'cheap' | 'mid' | 'premium';
+export type ModelTier = 'economy' | 'standard' | 'premium';
 
 export interface Agent {
   id: string;
@@ -46,6 +46,10 @@ export interface Agent {
   avatar_color: string;
   created_at: string;
   updated_at: string;
+  // Project assignment
+  project_id?: string | null;
+  project_name?: string | null;
+  designation?: 'primary' | 'sub-agent' | null;
   // Computed/aggregated
   total_runs?: number;
   avg_cost_per_run?: number;
@@ -104,11 +108,19 @@ export interface RunEvent {
   tool_name: string | null;
 }
 
+export interface MessageImage {
+  id: string;
+  data: string; // base64 data URL
+  name: string;
+  type: string; // mime type
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
   role: MessageRole;
   content: string;
+  images?: MessageImage[];
   agent_id: string | null;
   model: string | null;
   input_tokens: number | null;
@@ -202,6 +214,8 @@ export interface Project {
   description: string;
   color: string;
   focus?: ProjectFocus | null;
+  objective?: string | null;
+  primary_agent_id?: string | null;
   repo_url?: string | null;
   repo_branch?: string | null;
   repo_commit?: string | null;

@@ -17,9 +17,7 @@ import {
   Clock,
   Bot,
   Search,
-  Filter,
   Wrench,
-  User,
 } from 'lucide-react'
 
 type ActivityType = 'all' | 'agent' | 'tool' | 'system' | 'error'
@@ -100,6 +98,59 @@ function buildActivityLog(runs: Run[], agents: Agent[], tasks: Task[], runEvents
         cost: run.estimated_cost,
         icon: Clock,
         colorClass: 'bg-status-approval/10 border-status-approval/20 text-status-approval',
+      })
+    }
+  }
+
+  // From tasks (task-level activity)
+  for (const task of tasks) {
+    const agent = task.assigned_agent_id
+      ? agents.find((a) => a.id === task.assigned_agent_id)
+      : null
+
+    // Task created
+    entries.push({
+      id: `task-created-${task.id}`,
+      type: 'system',
+      title: `Task created: ${task.title}`,
+      description: `${task.priority} priority${agent ? ` · assigned to ${agent.name}` : ' · unassigned'}`,
+      agentName: agent?.name || null,
+      agentColor: agent?.avatar_color || null,
+      timestamp: task.created_at,
+      cost: null,
+      icon: Clock,
+      colorClass: 'bg-white/5 border-border text-muted-foreground',
+    })
+
+    // Task completed (only if status changed from created)
+    if (task.status === 'completed' && task.updated_at !== task.created_at) {
+      entries.push({
+        id: `task-completed-${task.id}`,
+        type: 'system',
+        title: `Task completed: ${task.title}`,
+        description: agent ? `Completed by ${agent.name}` : 'Marked as completed',
+        agentName: agent?.name || null,
+        agentColor: agent?.avatar_color || null,
+        timestamp: task.updated_at,
+        cost: null,
+        icon: CheckCircle2,
+        colorClass: 'bg-status-success/10 border-status-success/20 text-status-success',
+      })
+    }
+
+    // Task promoted to in_progress
+    if (task.status === 'running' && task.updated_at !== task.created_at) {
+      entries.push({
+        id: `task-promoted-${task.id}`,
+        type: 'system',
+        title: `Task promoted: ${task.title}`,
+        description: agent ? `Now being worked on by ${agent.name}` : 'Moved to In Progress',
+        agentName: agent?.name || null,
+        agentColor: agent?.avatar_color || null,
+        timestamp: task.updated_at,
+        cost: null,
+        icon: Zap,
+        colorClass: 'bg-status-running/10 border-status-running/20 text-status-running',
       })
     }
   }
@@ -297,9 +348,18 @@ export default function ActivityPage() {
               <Activity className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
               <p className="text-sm text-muted-foreground">
                 {allEntries.length === 0
-                  ? 'No activity yet — events appear here as agents run tasks.'
+                  ? 'No activity yet'
                   : 'No activity matches your filters.'}
               </p>
+              {allEntries.length === 0 && (
+                <p className="text-xs text-muted-foreground/50 mt-1 max-w-sm mx-auto">
+                  Activity appears here as agents run tasks. Head to the{' '}
+                  <Link href="/projects" className="text-accent hover:underline">
+                    a project workspace
+                  </Link>{' '}
+                  to start a conversation and kick off your first run.
+                </p>
+              )}
             </div>
           )}
         </div>

@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import { useTasks, useRuns, useAgents } from '@/lib/hooks'
+import { updateTaskStatus } from '@/lib/api'
 import { useActiveProject } from '@/lib/project-context'
 import type { Task, Run, Agent } from '@/lib/types'
 import { AgentAvatar } from '@/components/ui/agent-avatar'
@@ -14,11 +15,9 @@ import {
   CheckCircle2,
   XCircle,
   Eye,
-  MessageSquare,
   Clock,
   AlertTriangle,
   Filter,
-  ChevronDown,
 } from 'lucide-react'
 
 type Decision = 'pending' | 'approved' | 'rejected'
@@ -118,11 +117,13 @@ function getApprovalItems(tasks: Task[], runs: Run[], agents: Agent[]): Approval
 
 export default function ApprovalsPage() {
   const { activeProjectId } = useActiveProject()
-  const { data: tasks } = useTasks(activeProjectId)
-  const { data: runs } = useRuns(activeProjectId)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const { data: tasks } = useTasks(activeProjectId, undefined, refreshKey)
+  const { data: runs } = useRuns(activeProjectId, refreshKey)
   const { data: agents } = useAgents()
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
   const [decisions, setDecisions] = useState<Record<string, Decision>>({})
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set())
   const items = getApprovalItems(tasks, runs, agents)
 
   const filtered = items.filter((item) => {
@@ -135,9 +136,23 @@ export default function ApprovalsPage() {
     (i) => (decisions[i.id] || i.decision) === 'pending'
   ).length
 
-  const handleDecision = (id: string, decision: Decision) => {
-    setDecisions((prev) => ({ ...prev, [id]: decision }))
-  }
+  const handleDecision = useCallback(async (id: string, taskId: string, decision: Decision) => {
+    setLoadingIds((prev) => new Set(prev).add(id))
+    try {
+      const newStatus = decision === 'approved' ? 'completed' : 'queued'
+      await updateTaskStatus(taskId, newStatus)
+      setDecisions((prev) => ({ ...prev, [id]: decision }))
+      setRefreshKey((k) => k + 1)
+    } catch (err) {
+      console.error('Failed to update task status:', err)
+    } finally {
+      setLoadingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [])
 
   return (
     <div className="flex-1 h-screen overflow-y-auto bg-background">
@@ -197,7 +212,6 @@ export default function ApprovalsPage() {
                 decisions[item.id] || item.decision
               const isPending = effectiveDecision === 'pending'
               const isApproved = effectiveDecision === 'approved'
-              const isRejected = effectiveDecision === 'rejected'
 
               return (
                 <motion.div
@@ -275,20 +289,23 @@ export default function ApprovalsPage() {
                           <>
                             <button
                               onClick={() =>
-                                handleDecision(item.id, 'approved')
+                                handleDecision(item.id, item.taskId, 'approved')
                               }
-                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-status-success/10 border border-status-success/20 text-status-success text-xs font-medium hover:bg-status-success/20 transition-colors"
+                              disabled={loadingIds.has(item.id)}
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-status-success/10 border border-status-success/20 text-status-success text-xs font-medium hover:bg-status-success/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />{' '}
-                              Approve
+                              {loadingIds.has(item.id) ? 'Saving...' : 'Approve'}
                             </button>
                             <button
                               onClick={() =>
-                                handleDecision(item.id, 'rejected')
+                                handleDecision(item.id, item.taskId, 'rejected')
                               }
-                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-status-failed/10 border border-status-failed/20 text-status-failed text-xs font-medium hover:bg-status-failed/20 transition-colors"
+                              disabled={loadingIds.has(item.id)}
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-status-failed/10 border border-status-failed/20 text-status-failed text-xs font-medium hover:bg-status-failed/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <XCircle className="w-3.5 h-3.5" /> Reject
+                              <XCircle className="w-3.5 h-3.5" />{' '}
+                              {loadingIds.has(item.id) ? 'Saving...' : 'Reject'}
                             </button>
                             {item.runId && (
                               <Link
@@ -341,7 +358,7 @@ export default function ApprovalsPage() {
               </p>
               <p className="text-xs text-muted-foreground/50 mt-1">
                 {items.length === 0
-                  ? 'Approvals appear here when agents hit budget thresholds or need human sign-off.'
+                  ? 'Approvals appear here when agents need your sign-off before proceeding. Critical tasks and budget-exceeding actions require human review.'
                   : 'Try changing your filter.'}
               </p>
             </div>

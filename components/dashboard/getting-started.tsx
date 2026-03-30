@@ -2,47 +2,46 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useAgents, useTasks, useRuns, useProjects } from '@/lib/hooks'
+import { useAgents, useRuns, useProjects } from '@/lib/hooks'
 import { X, Check } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export function GettingStarted() {
   const [dismissed, setDismissed] = useState(false)
   const { data: agents } = useAgents()
-  const { data: tasks } = useTasks()
   const { data: runs } = useRuns()
   const { data: projects } = useProjects()
 
   const steps = [
     {
-      label: 'Claude Code SDK Connected',
+      label: 'SDK Connected',
       done: true,
-      hint: 'SDK is active — no API key needed',
+      hint: 'Claude Code SDK is active — uses your existing login, no API key needed',
       link: null,
-    },
-    {
-      label: 'Agents Registered',
-      done: agents.length > 0,
-      hint: 'Go to a project and assign agents to role lanes',
-      link: projects.length > 0 ? `/projects/${projects[0].id}` : '/projects',
     },
     {
       label: 'Project Created',
       done: projects.length > 0,
-      hint: 'Create your first project to organize work',
+      hint: 'Create a project to organize agents and work',
       link: '/projects',
     },
     {
-      label: 'Task Running',
-      done: tasks.some((t) => t.status === 'running'),
-      hint: 'Open the chat and send a task to an agent',
-      link: '/chats',
+      label: 'Agent Assigned',
+      done: agents.length > 0,
+      hint: 'Assign agents to role lanes in your project command center',
+      link: projects.length > 0 ? `/projects/${projects[0].id}` : '/projects',
     },
     {
-      label: 'Run Completed',
+      label: 'First Conversation',
+      done: runs.length > 0,
+      hint: 'Open a project → Chat tab to start a conversation',
+      link: projects.length > 0 ? `/projects/${projects[0].id}` : '/projects',
+    },
+    {
+      label: 'Task Completed',
       done: runs.some((r) => r.status === 'completed'),
-      hint: 'View completed runs and their output',
-      link: '/runs',
+      hint: 'Agents create tasks in Backlog; track them in the Boards tab',
+      link: projects.length > 0 ? `/projects/${projects[0].id}?tab=boards` : '/projects',
     },
   ]
   const completedCount = steps.filter((s) => s.done).length

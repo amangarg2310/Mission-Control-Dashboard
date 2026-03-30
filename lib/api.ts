@@ -63,6 +63,17 @@ export function fetchTasks(projectId?: string | null): Promise<Task[]> {
   return fetchJson<Task[]>(`/tasks${qs}`)
 }
 
+export async function updateTaskStatus(taskId: string, status: string): Promise<Task> {
+  const base = getBaseUrl()
+  const res = await fetch(`${base}/tasks/${taskId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
+  if (!res.ok) throw new Error(`Failed to update task status: ${res.status}`)
+  return res.json() as Promise<Task>
+}
+
 export async function createTaskDraft(data: {
   goal: string
   project_id: string
@@ -169,12 +180,12 @@ export function fetchProjectRoles(id: string): Promise<RoleAssignment[]> {
   return fetchJson<RoleAssignment[]>(`/projects/${id}/roles`)
 }
 
-export async function createProject(data: { name: string; description?: string; color?: string; repo_url?: string; repo_branch?: string }): Promise<Project> {
+export async function createProject(data: { name: string }): Promise<Project> {
   const base = getBaseUrl()
   const res = await fetch(`${base}/projects`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ name: data.name }),
   })
   if (!res.ok) throw new Error(`Failed to create project: ${res.status}`)
   return res.json() as Promise<Project>
@@ -210,6 +221,28 @@ export async function updateProjectFocus(projectId: string, focus: string): Prom
     body: JSON.stringify({ focus }),
   })
   if (!res.ok) throw new Error(`Failed to update focus: ${res.status}`)
+  return res.json() as Promise<ProjectContext>
+}
+
+export async function updateProjectObjective(projectId: string, objective: string): Promise<ProjectContext> {
+  const base = getBaseUrl()
+  const res = await fetch(`${base}/projects/${projectId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objective }),
+  })
+  if (!res.ok) throw new Error(`Failed to update objective: ${res.status}`)
+  return res.json() as Promise<ProjectContext>
+}
+
+export async function updateProjectPrimaryAgent(projectId: string, primaryAgentId: string | null): Promise<ProjectContext> {
+  const base = getBaseUrl()
+  const res = await fetch(`${base}/projects/${projectId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ primary_agent_id: primaryAgentId }),
+  })
+  if (!res.ok) throw new Error(`Failed to update primary agent: ${res.status}`)
   return res.json() as Promise<ProjectContext>
 }
 
@@ -295,6 +328,7 @@ export async function startWorkflow(projectId: string, chainId: string): Promise
 // --- Chat ---
 export async function sendChatMessage(data: {
   message: string
+  images?: { data: string; name: string; type: string }[]
   conversation_id?: string
   project_id?: string
   agent_id?: string
