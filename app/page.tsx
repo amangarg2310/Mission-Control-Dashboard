@@ -13,7 +13,7 @@ import { ActivityFeed } from '@/components/dashboard/activity-feed'
 import { RunStatusBoard } from '@/components/dashboard/run-status-board'
 import { ModelUsageChart } from '@/components/dashboard/model-usage-chart'
 import { TeamView } from '@/components/dashboard/team-view'
-import { GettingStarted } from '@/components/dashboard/getting-started'
+import { ActiveWorkSummary } from '@/components/dashboard/active-work-summary'
 import { AgentTasks } from '@/components/dashboard/agent-tasks'
 import { useDashboardStats, useConversations } from '@/lib/hooks'
 import { useActiveProject } from '@/lib/project-context'
@@ -112,8 +112,8 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Getting Started Checklist */}
-        <GettingStarted />
+        {/* Active Work Summary */}
+        <ActiveWorkSummary />
 
         {/* Active Agent Teams - Pipeline View */}
         <TeamView />
