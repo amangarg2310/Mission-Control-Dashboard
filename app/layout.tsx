@@ -6,8 +6,8 @@ import { ProjectProvider } from "@/lib/project-context";
 import { ToastProvider } from "@/components/ui/toast";
 
 export const metadata: Metadata = {
-  title: "Mission Control",
-  description: "AI Agent Orchestration Control Plane",
+  title: "Claude Mission Control",
+  description: "AI Agent Orchestration powered by Claude",
 };
 
 export default function RootLayout({

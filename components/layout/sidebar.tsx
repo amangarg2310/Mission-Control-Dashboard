@@ -114,7 +114,7 @@ export function Sidebar() {
               <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="currentColor" />
             </svg>
           </div>
-          Mission Control
+          Claude Mission Control
         </div>
       </div>
 
@@ -218,7 +218,7 @@ export function Sidebar() {
           </div>
           <div className="flex flex-col items-start">
             <span className="text-sm font-medium text-foreground">
-              Mission Control
+              Claude Mission Control
             </span>
             <span className="text-xs text-muted-foreground">
               {onlineAgentCount} agents online
