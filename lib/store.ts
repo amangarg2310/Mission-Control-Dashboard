@@ -13,8 +13,9 @@ import { loadProjectData, saveProjectData } from './project-store'
  * This is a server-only module — never import from client components.
  */
 
-// Use a local state dir for persistence
-const stateDir = process.env.MISSION_CONTROL_STATE_DIR || null
+// Use a local state dir for persistence. Default to /tmp so Vercel's writable
+// temp filesystem is used when no explicit state dir is configured.
+const stateDir = process.env.MISSION_CONTROL_STATE_DIR || '/tmp'
 
 class DataStore {
   private _agents: Agent[]
